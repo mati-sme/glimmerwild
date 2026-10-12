@@ -294,7 +294,7 @@ function drawToast() {
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
   G.dt = dt; G.time += dt;
   ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
