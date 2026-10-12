@@ -91,7 +91,7 @@ function fusedName(a, b) {
 }
 
 // Deterministic from the two parents, so the preview equals the result.
-export function fuse(a, b) {
+export function fuse(a, b, vial) {
   const rng = mulberry32(hashStr([a.id, b.id].sort().join('|')));
   const of = (x, y) => (rng() < 0.5 ? x : y);
   const base = [0, 1, 2, 3].map((i) => {
@@ -118,10 +118,18 @@ export function fuse(a, b) {
   const traits = [];
   for (const t of [...a.traits, ...b.traits]) if (t !== 'Titan' && !traits.includes(t) && rng() < 0.65) traits.push(t);
   if (traits.length < 2 && rng() < 0.2) { const t = pick(rng, TRAIT_LIST); if (!traits.includes(t)) traits.push(t); }
+  if (vial && TRAITS[vial] && vial !== 'Titan') { const i = traits.indexOf(vial); if (i >= 0) traits.splice(i, 1); traits.unshift(vial); }
   const c = {
     id: uid(), sp: of(a.sp, b.sp), name: fusedName(a, b), lv, xp: 0, g: genes, types, base,
     traits: traits.slice(0, 2), hp: 0, gen: Math.max(a.gen, b.gen) + 1, trainAt: 0,
   };
   c.hp = maxHp(c);
   return c;
+}
+
+export const RARITY = [{ n: 'Common', c: '#9aa88a' }, { n: 'Uncommon', c: '#58c848' }, { n: 'Rare', c: '#4890e0' }, { n: 'Epic', c: '#b060e8' }, { n: 'Legendary', c: '#f0c830' }];
+// 0..4 from base stats, traits, fusion generation and dual typing
+export function rarity(c) {
+  const s = (c.base[0] + c.base[1] + c.base[2] + c.base[3]) / 4 + 10 * c.traits.length + 7 * (c.gen || 0) + (c.types.length > 1 ? 6 : 0) + (c.traits.includes('Titan') ? 22 : 0);
+  return s < 54 ? 0 : s < 64 ? 1 : s < 76 ? 2 : s < 90 ? 3 : 4;
 }

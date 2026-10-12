@@ -1,10 +1,11 @@
 // Cache-first service worker; all paths relative so it works under a subpath.
-const CACHE = 'glimmerwild-v1';
+const CACHE = 'glimmerwild-v2';
 const FILES = [
   './', './index.html', './manifest.json', './css/style.css',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './js/main.js', './js/util.js', './js/data.js', './js/state.js', './js/save.js', './js/audio.js',
-  './js/input.js', './js/ui.js', './js/creature.js', './js/world.js', './js/sprites.js', './js/battle.js', './js/menus.js',
+  './js/input.js', './js/ui.js', './js/creature.js', './js/world.js', './js/sprites.js', './js/menus.js',
+  './js/icons.js', './js/gear.js', './js/quests.js', './js/combat.js', './js/combatdraw.js', './js/base.js', './js/overworld.js',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

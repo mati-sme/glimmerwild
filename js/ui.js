@@ -4,6 +4,7 @@ import { input } from './input.js';
 import { sfx } from './audio.js';
 import { TYPE_COLORS, TYPE_NAMES } from './data.js';
 import { drawCreature } from './sprites.js';
+import { drawIcon } from './icons.js';
 
 export const PAL = { dark: '#0f380f', mid: '#306230', light: '#8bac0f', pale: '#e4eebc', ink: '#142814', red: '#d8483c', gold: '#f0c830' };
 let ctx = null;
@@ -59,6 +60,22 @@ export function button(label, x, y, w, h, o = {}) {
   if (tapped) sfx.tap();
   return tapped;
 }
+// Big icon-first button. Icon on top (square-ish buttons) or left (wide buttons); label is optional.
+export function iconButton(icon, label, x, y, w, h, o = {}) {
+  const dis = !!o.disabled, p = !dis && pressed(x, y, w, h), tapped = !dis && hit(x, y, w, h), b = Math.max(2, Math.round(2 * G.u));
+  fillR(x, y, w, h, PAL.dark);
+  fillR(x + b, y + b, w - 2 * b, h - 2 * b, dis ? '#9aa88a' : p ? PAL.mid : o.fill || PAL.light);
+  if (!p && !dis) { fillR(x + b, y + b, w - 2 * b, b, 'rgba(255,255,255,.4)'); fillR(x + b, y + h - 2 * b, w - 2 * b, b, 'rgba(0,0,0,.18)'); }
+  const wide = w > h * 1.4, is = Math.min(wide ? h * 0.62 : Math.min(w * 0.55, h * (label ? 0.5 : 0.62)), 70 * G.u);
+  const ix = wide ? x + h * 0.5 + b : x + w / 2, iy = wide || !label ? y + h / 2 : y + h * 0.4;
+  if (dis) ctx.globalAlpha = 0.45;
+  drawIcon(ctx, icon, ix, iy + (p ? b / 2 : 0), is, o.color);
+  ctx.globalAlpha = 1;
+  if (o.badge !== undefined) text(String(o.badge), x + w - 6 * G.u, y + 10 * G.u, { size: 12, align: 'right', color: '#fff', shadow: PAL.dark });
+  if (label) text(label, wide ? x + h + 4 * G.u + (w - h - 8 * G.u) / 2 : x + w / 2, wide ? y + h / 2 : y + h * 0.82, { size: o.size || 11, color: dis ? '#6a7a5a' : PAL.dark, align: 'center', maxW: wide ? w - h - 10 * G.u : w - 8 * G.u });
+  if (tapped) sfx.tap();
+  return tapped;
+}
 export function bar(x, y, w, h, f, color) {
   f = Math.max(0, Math.min(1, f));
   fillR(x, y, w, h, PAL.dark); fillR(x + 1.5 * G.u, y + 1.5 * G.u, w - 3 * G.u, h - 3 * G.u, '#2a3a2a');
@@ -88,7 +105,7 @@ export function bgPattern() {
 export function creatureIcon(c, x, y, size) { drawCreature(ctx, c.g, x + size / 2, y + size / 2, size); }
 
 // Creature card row. Returns true when tapped.
-import { maxHp, xpNeed } from './creature.js';
+import { maxHp, xpNeed, rarity, RARITY } from './creature.js';
 export function creatureRow(c, x, y, w, h, o = {}) {
   const dis = !!o.disabled, p = !dis && pressed(x, y, w, h), tapped = !dis && hit(x, y, w, h), u = G.u;
   const b = Math.max(2, Math.round(2 * u));
@@ -100,6 +117,7 @@ export function creatureRow(c, x, y, w, h, o = {}) {
   const tx = x + b + ic + 8 * u, tw = w - (tx - x) - 8 * u;
   text(c.name + (c.gen ? ' ' + '★'.repeat(Math.min(c.gen, 3)) : ''), tx, y + h * 0.27, { size: 13, maxW: tw * 0.62, color: dis ? '#6a7a5a' : PAL.ink });
   text('Lv' + c.lv, x + w - 8 * u, y + h * 0.27, { size: 12, align: 'right', color: PAL.mid });
+  { const r = rarity(c); for (let i = 0; i <= r; i++) drawIcon(ctx, 'star', x + w - 10 * u - i * 9 * u, y + h * 0.84, 8 * u, RARITY[r].c); }
   const bw = Math.min(tw * 0.55, 120 * u), mh = maxHp(c);
   bar(tx, y + h * 0.52, bw, 8 * u, c.hp / mh);
   text(c.hp <= 0 ? 'FAINTED' : `${c.hp}/${mh}`, tx + bw + 6 * u, y + h * 0.52 + 4 * u, { size: 10, color: c.hp <= 0 ? PAL.red : PAL.mid });

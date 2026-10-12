@@ -1,14 +1,28 @@
 // Seeded tile world generation, collision, wild spawning. DOM-free.
 import { fbm, valueNoise, hash2, mulberry32, hashStr, clamp, pick } from './util.js';
 import { BIOME, BIOME_KEYS, BOSSES, SPECIES } from './data.js';
-import { makeCreature } from './creature.js';
+import { makeCreature, maxHp } from './creature.js';
 
 export const N = 240;
-export const T = { WATER: 0, SAND: 1, GRASS: 2, TALL: 3, FOREST: 4, TREE: 5, DESERT: 6, CACTUS: 7, SNOW: 8, PINE: 9, SWAMP: 10, BOG: 11, DEADTREE: 12, ASH: 13, LAVA: 14, ROCK: 15, SHRINE: 16, FLOWER: 17, ICE: 18, BOULDER: 19 };
-export const NTILES = 20;
+export const T = { WATER: 0, SAND: 1, GRASS: 2, TALL: 3, FOREST: 4, TREE: 5, DESERT: 6, CACTUS: 7, SNOW: 8, PINE: 9, SWAMP: 10, BOG: 11, DEADTREE: 12, ASH: 13, LAVA: 14, ROCK: 15, SHRINE: 16, FLOWER: 17, ICE: 18, BOULDER: 19, PATH: 20, FENCE: 21, STATION: 22 };
+export const NTILES = 23;
 const SOLID = new Uint8Array(NTILES);
-[T.WATER, T.TREE, T.CACTUS, T.PINE, T.DEADTREE, T.LAVA, T.ROCK, T.SHRINE, T.BOULDER].forEach((t) => (SOLID[t] = 1));
+[T.WATER, T.TREE, T.CACTUS, T.PINE, T.DEADTREE, T.LAVA, T.ROCK, T.SHRINE, T.BOULDER, T.FENCE, T.STATION].forEach((t) => (SOLID[t] = 1));
 const SLOW = { [T.SAND]: 0.9, [T.BOG]: 0.7, [T.SNOW]: 0.88, [T.SWAMP]: 0.9 };
+// Home base: a fenced camp west of the spawn. Stations are solid tiles drawn with sprites on top.
+const C0 = N / 2;
+export const CAMP = {
+  x0: C0 - 13, y0: C0 - 4, x1: C0 - 3, y1: C0 + 4, cx: C0 - 8 + 0.5, cy: C0 + 0.5,
+  stations: [
+    { id: 'chest', x: C0 - 11, y: C0 - 2, icon: 'chest', col: '#b8803c' },
+    { id: 'lab', x: C0 - 9, y: C0 - 2, icon: 'flask', col: '#b878f0' },
+    { id: 'forge', x: C0 - 7, y: C0 - 2, icon: 'anvil', col: '#9a9aa8' },
+    { id: 'train', x: C0 - 5, y: C0 - 2, icon: 'dumbbell', col: '#e8885c' },
+  ],
+};
+export const inCamp = (x, y) => x >= CAMP.x0 && x <= CAMP.x1 + 1 && y >= CAMP.y0 && y <= CAMP.y1 + 1;
+// Monsters never enter the camp or the shrine clearing.
+export const inSafe = (x, y) => (x > CAMP.x0 - 2 && x < CAMP.x1 + 3 && y > CAMP.y0 - 2 && y < CAMP.y1 + 3) || Math.hypot(x - (C0 + 3.5), y - (C0 - 1.5)) < 4.5;
 export const isSolidTile = (t) => SOLID[t] === 1;
 export const FLOOR = [T.WATER, T.SAND, T.GRASS, T.FOREST, T.DESERT, T.SNOW, T.SWAMP, T.ASH];
 
@@ -63,6 +77,13 @@ export function generate(seed) {
   const spawn = { x: c + 0.5, y: c + 0.5 };
   const shrine = { x: c + 3, y: c - 2 };
   tiles[shrine.y * N + shrine.x] = T.SHRINE;
+  for (let y = CAMP.y0; y <= CAMP.y1; y++) for (let x = CAMP.x0; x <= CAMP.x1; x++) {
+    const edge = x === CAMP.x0 || x === CAMP.x1 || y === CAMP.y0 || y === CAMP.y1;
+    const gate = x === CAMP.x1 && y >= C0 - 1 && y <= C0 + 1;
+    tiles[y * N + x] = edge && !gate ? T.FENCE : T.PATH;
+    biome[y * N + x] = BIOME.MEADOW;
+  }
+  for (const st of CAMP.stations) tiles[st.y * N + st.x] = T.STATION;
   const w = { seed, tiles, biome, spawn, shrine, bosses: [] };
 
   // reachability from spawn (4-neighbour flood fill)
@@ -116,6 +137,13 @@ export function moveEntity(w, e, dx, dy, r = 0.28) {
 }
 
 // --- wild spawning ---
+export function newMob(c, x, y, biome, rng = Math.random, o = {}) {
+  const hp = Math.max(1, Math.round(maxHp(c) * (o.hpMul || 1)));
+  return {
+    c, x, y, hx: x, hy: y, tx: x, ty: y, wait: rng() * 2, dir: 1, biome, bob: rng() * 6, hp, maxHp: hp,
+    vx: 0, vy: 0, flash: 0, st: 'idle', stT: 0, cd: 1, aggro: 0, tgt: null, boss: null, born: 0, ...o,
+  };
+}
 const SPECIES_BY_BIOME = {};
 for (const s of SPECIES) for (const b of s.biomes) (SPECIES_BY_BIOME[b] = SPECIES_BY_BIOME[b] || []).push(s);
 
@@ -129,10 +157,10 @@ export function trySpawnWild(w, px, py, rng = Math.random) {
   const x = Math.floor(px + Math.cos(a) * dist), y = Math.floor(py + Math.sin(a) * dist);
   if (x < 2 || y < 2 || x >= N - 2 || y >= N - 2) return null;
   const i = y * N + x;
-  if (!w.reach[i] || SOLID[w.tiles[i]]) return null;
+  if (!w.reach[i] || SOLID[w.tiles[i]] || inSafe(x, y)) return null;
   const list = SPECIES_BY_BIOME[BIOME_KEYS[w.biome[i]]];
   if (!list) return null;
   const sp = pick(rng, list);
   const c = makeCreature(sp.id, wildLevel(w, x, y, rng), rng);
-  return { c, x: x + 0.5, y: y + 0.5, tx: x + 0.5, ty: y + 0.5, wait: rng() * 2, dir: 1, biome: BIOME_KEYS[w.biome[i]], bob: rng() * 6 };
+  return newMob(c, x + 0.5, y + 0.5, BIOME_KEYS[w.biome[i]], rng);
 }

@@ -189,6 +189,13 @@ const TILE_DRAW = {
   [T.ICE]: (x, v, rng) => { rect(x, '#aee4f4', 0, 0, 16, 16); speck(x, rng, ['#8cd0e8'], 10); for (let i = 0; i < 2; i++) rect(x, '#e8fbff', (rng() * 10) | 0, (rng() * 15) | 0, 4 + ((rng() * 3) | 0), 1); },
   [T.SHRINE]: (x, v, rng) => { ground(x, T.GRASS, rng); rect(x, '#50505c', 2, 11, 12, 4); rect(x, '#8a8a96', 2, 10, 12, 3); rect(x, '#8a8a96', 5, 4, 6, 7); rect(x, '#b0b0bc', 5, 4, 2, 7); const c = v % 2 ? '#a0f4ff' : '#60e0ff'; rect(x, c, 7, 0, 2, 2); rect(x, c, 6, 2, 4, 3); rect(x, c, 7, 5, 2, 1); rect(x, '#ffffff', 7, 2, 1, 2); },
 };
+TILE_DRAW[T.PATH] = (x, v, rng) => { rect(x, '#c8a46c', 0, 0, 16, 16); speck(x, rng, ['#b8905a', '#d8b87c', '#a8804c'], 16); };
+TILE_DRAW[T.STATION] = TILE_DRAW[T.PATH];
+TILE_DRAW[T.FENCE] = (x, v, rng) => {
+  TILE_DRAW[T.PATH](x, v, rng);
+  rect(x, '#5a3a1c', 0, 5, 16, 2); rect(x, '#5a3a1c', 0, 10, 16, 2); rect(x, '#8a5a2c', 0, 5, 16, 1); rect(x, '#8a5a2c', 0, 10, 16, 1);
+  for (const px of [1, 7, 13]) { rect(x, '#3c2410', px, 2, 3, 13); rect(x, '#a07040', px, 2, 1, 12); }
+};
 for (const t of Object.keys(GROUND)) TILE_DRAW[t] = (x, v, rng) => ground(x, +t, rng);
 
 export function getAtlas() {
@@ -245,7 +252,7 @@ export function drawOrb(ctx, x, y, size, rot = 0, open = 0) {
     for (let j = 0; j < 12; j++) for (let i = 0; i < 12; i++) {
       const d = Math.hypot(i + 0.5 - 6, j + 0.5 - 6);
       if (d > 5.8) continue;
-      let col = d > 4.9 ? '#1c1c28' : j < 5 ? (i < 5 && j < 4 ? '#ff8a7a' : '#e83c3c') : j < 7 ? '#1c1c28' : '#f4f4f4';
+      let col = d > 4.9 ? '#1c1c28' : j < 5 ? (i < 5 && j < 4 ? '#c8a8ff' : '#8a50f0') : j < 7 ? '#1c1c28' : '#f4f4f4';
       if (j >= 7 && d <= 4.9 && i > 6) col = '#c8c8d0';
       if (d < 2.2 && j >= 4 && j <= 8) col = d < 1.4 ? '#ffffff' : '#1c1c28';
       c.fillStyle = col; c.fillRect(i, j, 1, 1);

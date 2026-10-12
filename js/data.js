@@ -77,9 +77,3 @@ export const BOSSES = [
   { id: 'b_swamp', name: 'Murk Matron', sp: 'bogbub', biome: 'swamp', lv: 34, minDist: 40 },
   { id: 'b_volcano', name: 'Cinder Tyrant', sp: 'magmaw', biome: 'volcano', lv: 42, minDist: 40 },
 ];
-
-export const BIOME_SCENE = {
-  meadow: ['#9fd8f0', '#6cc058'], forest: ['#6aa86a', '#3a7a3a'], desert: ['#f0d8a0', '#e0b060'],
-  snow: ['#d8ecf8', '#f0f6fc'], swamp: ['#8aa078', '#4c6a3c'], volcano: ['#7a3a3a', '#4a3c3c'],
-  shore: ['#a0d8f0', '#ead598'], water: ['#a0d8f0', '#ead598'],
-};
