@@ -116,7 +116,9 @@ export function creatureRow(c, x, y, w, h, o = {}) {
   drawCreature(ctx, c.g, x + b + u + ic / 2, y + b + u + ic / 2 - ic * 0.04, ic * 1.12, { alpha: c.hp <= 0 ? 0.45 : 1 });
   const tx = x + b + ic + 8 * u, tw = w - (tx - x) - 8 * u;
   text(c.name + (c.gen ? ' ' + '★'.repeat(Math.min(c.gen, 3)) : ''), tx, y + h * 0.27, { size: 13, maxW: tw * 0.62, color: dis ? '#6a7a5a' : PAL.ink });
-  text('Lv' + c.lv, x + w - 8 * u, y + h * 0.27, { size: 12, align: 'right', color: PAL.mid });
+  text('Lv' + c.lv + (o.need ? '/' + o.need : ''), x + w - 8 * u, y + h * 0.27, { size: 12, align: 'right', color: o.need ? PAL.red : PAL.mid });
+  if (o.need) drawIcon(ctx, 'lock', x + b + u + ic * 0.78, y + b + u + ic * 0.78, ic * 0.5);
+  else if (o.bad) drawIcon(ctx, 'cross', x + b + u + ic * 0.78, y + b + u + ic * 0.78, ic * 0.5);
   { const r = rarity(c); for (let i = 0; i <= r; i++) drawIcon(ctx, 'star', x + w - 10 * u - i * 9 * u, y + h * 0.84, 8 * u, RARITY[r].c); }
   const bw = Math.min(tw * 0.55, 120 * u), mh = maxHp(c);
   bar(tx, y + h * 0.52, bw, 8 * u, c.hp / mh);

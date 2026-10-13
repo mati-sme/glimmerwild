@@ -1,7 +1,7 @@
 export const G = {
   screen: 'title', seed: 1, W: 0, H: 0, u: 1, dpr: 1, safe: { t: 0, r: 0, b: 0, l: 0 },
   player: { x: 0, y: 0, dir: 0 }, team: [], storage: [], orbs: 12, berries: 3,
-  skill: { lvl: 1, xp: 0 }, bosses: {}, dex: { seen: {}, caught: {} }, settings: { sound: true }, playtime: 0,
+  skill: { lvl: 1, xp: 0 }, bosses: {}, dex: { seen: {}, caught: {} }, settings: { sound: true, petAuto: true }, playtime: 0, essence: 0, fuseSlots: [0, 0],
   gear: { w: 0, a: 0 }, mats: { hide: 0, fang: 0, gem: 0, core: 0 }, vials: {}, quests: { done: {}, prog: {} }, stats: {},
   world: null, mobs: [], ui: {}, toast: null, time: 0,
 };

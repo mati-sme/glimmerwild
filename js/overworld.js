@@ -11,11 +11,11 @@ import { makeCreature, maxHp } from './creature.js';
 import { go } from './menus.js';
 import { BIOME_NAMES } from './data.js';
 import { clamp } from './util.js';
-import { K, initCombat, updateCombat, playerAttack, throwOrb, aimAssist, nearestMob, clampLanding, playerAlive, activePet, maxThrowRange } from './combat.js';
+import { K, petAutoOn, initCombat, updateCombat, playerAttack, throwOrb, aimAssist, nearestMob, clampLanding, playerAlive, activePet, maxThrowRange } from './combat.js';
 import { drawUnder, drawOver, mobEntities, petEntity } from './combatdraw.js';
 import { updateBase, baseEntities, nearStation, STATION_NAMES } from './base.js';
 import { playerMaxHp, MATS, MAT_KEYS } from './gear.js';
-import { activeQuests, progressOf } from './quests.js';
+import { activeQuests, progressOf, questCheck } from './quests.js';
 
 let cv = null;
 export const initOverworld = (canvas) => { cv = canvas; };
@@ -37,7 +37,7 @@ export function newGame(starterId) {
   c.traits = []; c.hp = maxHp(c);
   Object.assign(G, {
     team: [c], storage: [], orbs: 12, berries: 3, skill: { lvl: 1, xp: 0 }, bosses: {}, dex: { seen: { [starterId]: 1 }, caught: { [starterId]: 1 } }, playtime: 0,
-    gear: { w: 0, a: 0 }, mats: { hide: 0, fang: 0, gem: 0, core: 0 }, vials: {}, quests: { done: {}, prog: {} }, stats: {}, hp: null,
+    gear: { w: 0, a: 0 }, mats: { hide: 0, fang: 0, gem: 0, core: 0 }, vials: {}, quests: { done: {}, prog: {} }, stats: {}, hp: null, essence: 0, fuseSlots: [0, 0],
   });
   const w = generate(G.seed);
   G.player = { x: w.spawn.x, y: w.spawn.y, dir: 0 };
@@ -99,6 +99,7 @@ export function updateWorld(dt) {
   if (b !== G.lastBiome) { G.lastBiome = b; G.banner = { text: BIOME_NAMES[b], t: 2.4 }; }
   if (G.banner) { G.banner.t -= dt; if (G.banner.t <= 0) G.banner = null; }
   if (G.questFx) { G.questFx.t -= dt; if (G.questFx.t <= 0) G.questFx = null; }
+  G.questT = (G.questT || 0) + dt; if (G.questT > 1) { G.questT = 0; questCheck(); }
   G.autosaveT += dt;
   if (G.autosaveT > 20) { G.autosaveT = 0; G.hp = Math.max(1, G.hp); save(); }
   G.near = alive ? nearStation(p) : null;
@@ -223,21 +224,29 @@ function drawHud(S) {
   if (!pet) drawIcon(ctx, 'skull', px + 17 * u, py + 34 * u + 16 * u, 18 * u);
   // quest chips
   let qy = py + 70 * u;
+  const qy0 = qy;
   activeQuests().forEach((q, i) => {
-    const cw = Math.min(i ? 78 * u : 96 * u, pw), prog = progressOf(q);
-    panel(px, qy, cw, 22 * u, { fill: i ? '#cdd8a8' : '#f4f0a8' });
-    drawIcon(ctx, q.icon, px + 13 * u, qy + 11 * u, 14 * u);
-    bar(px + 25 * u, qy + 6 * u, cw - 31 * u, 10 * u, prog / q.n, '#58b0ff');
-    text(`${prog}/${q.n}`, px + 25 * u + (cw - 31 * u) / 2, qy + 11.5 * u, { size: 8.5, align: 'center', color: PAL.ink, shadow: i ? false : '#fff' });
-    qy += 25 * u;
+    const cw = Math.min(i ? 96 * u : 120 * u, pw), prog = progressOf(q);
+    panel(px, qy, cw, 26 * u, { fill: i ? '#cdd8a8' : '#f4f0a8' });
+    drawIcon(ctx, q.icon, px + 15 * u, qy + 13 * u, 18 * u);
+    bar(px + 29 * u, qy + 7 * u, cw - 35 * u, 12 * u, prog / q.n, '#58b0ff');
+    text(`${prog}/${q.n}`, px + 29 * u + (cw - 35 * u) / 2, qy + 13.5 * u, { size: 9.5, align: 'center', color: PAL.ink, shadow: i ? false : '#fff' });
+    qy += 29 * u;
   });
+  const chipsRect = [px, qy0, Math.min(120 * u, pw), qy - qy0];
+  if (qy > qy0 && hit(...chipsRect)) { sfx.tap(); go('quests'); }
   // --- top-right: menu + materials ---
   const mb = 44 * u, mx = W - safe.r - mb - 8 * u, my = safe.t + 8 * u;
   if (iconButton('menu', '', mx, my, mb, mb, { fill: PAL.light })) go('menu');
+  const qx = mx - mb - 8 * u;
+  if (iconButton('scroll', '', qx, my, mb, mb, { fill: '#f4e08c' })) go('quests');
+  if (G.questNew) { const k = 1 + Math.sin(G.time * 8) * 0.15; drawIcon(ctx, 'star', qx + mb - 4 * u, my + 6 * u, 20 * u * k); }
   let ry = my + mb + 6 * u;
   panel(mx - 38 * u, ry, mb + 38 * u, 26 * u);
   const cell = (mb + 38 * u) / 4;
   MAT_KEYS.forEach((k, i) => { drawIcon(ctx, k, mx - 38 * u + cell * i + 8 * u, ry + 9 * u, 11 * u); text(String(G.mats[k] || 0), mx - 38 * u + cell * i + cell / 2 + 3 * u, ry + 19 * u, { size: 8.5, align: 'center' }); });
+  panel(mx - 38 * u, ry + 29 * u, mb + 38 * u, 22 * u);
+  drawIcon(ctx, 'essence', mx - 38 * u + 14 * u, ry + 40 * u, 14 * u); text(String(G.essence || 0), mx - 38 * u + 28 * u, ry + 40.5 * u, { size: 10 });
   // --- boss bar ---
   const bb = K.bossBar;
   if (bb) {
@@ -309,10 +318,16 @@ function drawHud(S) {
     useRect = [ux - ur, uy - ur, ur * 2, ur * 2];
     if (ut) useStation(st);
   }
-  input.block = [[ax - ar, ay - ar, ar * 2, ar * 2], [cx - cr, cy - cr, cr * 2, cr * 2], [mx, my, mb, mb]];
+  // pet auto-attack toggle: paw + sword, green when the partner fights on its own, grey + cross when it holds back
+  const tr = 24 * u, tx = cx - cr * 0.2, ty = cy - cr - tr - 8 * u, auto = petAutoOn();
+  if (tapIn(tx, ty, tr * 1.15)) { G.settings.petAuto = !auto; sfx.tap(); toast(G.settings.petAuto ? 'Partner fights!' : 'Partner waits', 1.2); save(); }
+  circleBtn(tx, ty, tr, auto ? '#58b848' : '#8a8a96', 'paw', { iscale: 1.0, dim: !auto });
+  drawIcon(ctx, 'sword', tx + tr * 0.62, ty + tr * 0.62, tr * 0.8, auto ? undefined : '#b8b8c4');
+  if (!auto) drawIcon(ctx, 'cross', tx, ty, tr * 1.3);
+  input.block = [[ax - ar, ay - ar, ar * 2, ar * 2], [cx - cr, cy - cr, cr * 2, cr * 2], [mx, my, mb, mb], [qx, my, mb, mb], [tx - tr, ty - tr, tr * 2, tr * 2], chipsRect];
   if (useRect) input.block.push(useRect);
   input.zone = [0, H * (W > H ? 0.2 : 0.3), W * 0.6, H];
-  G.hud = { attack: { x: ax, y: ay, r: ar }, catch: { x: cx, y: cy, r: cr }, use: st ? { x: ux, y: uy, r: ur } : null, menu: { x: mx + mb / 2, y: my + mb / 2 }, ts };
+  G.hud = { attack: { x: ax, y: ay, r: ar }, catch: { x: cx, y: cy, r: cr }, use: st ? { x: ux, y: uy, r: ur } : null, menu: { x: mx + mb / 2, y: my + mb / 2 }, quest: { x: qx + mb / 2, y: my + mb / 2 }, pet: { x: tx, y: ty, r: tr }, ts };
 }
 
 export function drawToast() {

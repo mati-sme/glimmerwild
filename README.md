@@ -21,7 +21,7 @@ Locally: serve the folder with any static server (`python3 -m http.server`) and 
 Everything needed to move, fight, catch and heal is an icon: red sword = hit, blue orb = catch, yellow hand/station icon = use, heart = heal, crown = boss. A pulsing arrow points to the next goal (heart when hurt, otherwise the active quest target), sound cues warn of incoming attacks, and colours are consistent (red = danger, green = go, gold = reward). Text remains for the main player in menus and toasts.
 
 ## Saving
-Autosaves to localStorage (`glimmerwild.save.v2`). Old v1 saves are migrated on load (new fields get defaults) and the v1 key is never overwritten.
+Autosaves to localStorage (`glimmerwild.save.v3`). Old v1/v2 saves are migrated on load (new fields get defaults) and the old keys are never overwritten.
 
 ## Files
 - `js/` ES modules: `main` (loop, title), `overworld` (world update/draw, HUD, controls), `combat` (mobs, bosses, pet, orbs), `combatdraw`, `base` (camp stations and residents), `gear`, `quests`, `icons`, `world`, `sprites`, `creature`, `menus`, `ui`, `input`, `data`, `state`, `save`, `audio`, `util`

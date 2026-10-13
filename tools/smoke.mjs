@@ -122,10 +122,47 @@ for (const { name, opts } of runs) {
   // quests screen
   await tap((await state()).hud.menu.x, (await state()).hud.menu.y, 500);
   if ((await screen()) !== 'menu') fail('menu button did not open the menu');
-  await G(() => { window.__G.G.screen = 'quests'; });
-  await wait(300); await snap('quests-' + name);
   await page.keyboard.press('Escape'); await wait(300);
-  await G(() => { window.__G.G.screen = 'world'; });
+  if ((await screen()) !== 'world') await G(() => { window.__G.G.screen = 'world'; });
+  // the world HUD has a quest-board button and tappable quest chips
+  await wait(200);
+  await snap('hud-' + name);
+  { const s = await state(); await tap(s.hud.quest.x, s.hud.quest.y, 500); if ((await screen()) !== 'quests') fail('quest board button did not open the quests screen'); }
+  await wait(300); await snap('quests-' + name);
+  if (!(await G(async () => (await import('/js/quests.js')).QUESTS.length >= 25))) fail('expected >= 25 quests');
+  await page.keyboard.press('Escape'); await wait(300);
+  if ((await screen()) !== 'menu') fail('escape from quests should return to the menu');
+  await G(() => { window.__G.G.screen = 'world'; }); await wait(200);
+
+  // --- pet auto-attack toggle + the pet leaves the creature being aimed at alone ---
+  {
+    const s = await state(); if (!(await G(() => window.__G.G.settings.petAuto === true))) fail('petAuto should default on');
+    await tap(s.hud.pet.x, s.hud.pet.y, 400);
+    if (await G(() => window.__G.G.settings.petAuto !== false)) fail('pet toggle tap did not turn auto-attack off');
+    await snap('pet-off-' + name);
+    await tap(s.hud.pet.x, s.hud.pet.y, 400);
+    if (await G(() => window.__G.G.settings.petAuto !== true)) fail('pet toggle tap did not turn auto-attack back on');
+    await G(() => { const g = window.__G.G; g.mobs = g.mobs.filter((m) => m.boss); });
+    const run = async (setup) => {
+      await G(async (setup) => { const g = window.__G.G, p = g.player; g.mobs = g.mobs.filter((m) => m.boss); const m = window.__G.spawnMobAt(p.x + 2.2, p.y, 'budlet', 1, { elite: false }); m.aggro = 99; m.st = 'chase'; g.aimView = null; g.settings.petAuto = true; if (setup === 'off') g.settings.petAuto = false; window.__probe = m; }, setup);
+      const hudc = (await state()).hud.catch;
+      if (setup === 'aim') await touch('touchStart', hudc.x, hudc.y, 3); // hold Catch: aim locks the nearest creature
+      for (let i = 0; i < 16; i++) { await wait(250); await G(() => { const g = window.__G.G; g.hp = 60; for (const c of g.team) c.hp = 999; if (window.__probe) window.__probe.hp = Math.min(window.__probe.maxHp, window.__probe.hp); }); }
+      if (setup === 'aim') await touch('touchEnd', 0, 0, 3);
+      return G(() => { const m = window.__probe; const g = window.__G.G; const r = { full: m.hp >= m.maxHp, gone: !g.mobs.includes(m), hits: g.stats.hits || 0 }; g.aimView = null; g.settings.petAuto = true; return r; });
+    };
+    // keep the player from hitting: only the pet may damage the probe mob
+    const aim = await run('aim'); if (!aim.full) fail('pet attacked the creature being aimed at');
+    const off = await run('off'); if (!off.full) fail('pet attacked while auto-attack was off');
+    const on = await run('on'); if (on.full && !on.gone) fail('pet never attacked with auto-attack on');
+    await G(() => { const g = window.__G.G; g.mobs = g.mobs.filter((m) => m.boss); });
+  }
+
+  // --- tougher mobs and elites ---
+  {
+    const r = await G(async () => { const cr = await import('/js/creature.js'), g = window.__G.G, p = g.player; const a = window.__G.spawnMobAt(p.x + 6, p.y, 'budlet', 5, { elite: false }), b = window.__G.spawnMobAt(p.x + 6, p.y + 2, 'budlet', 5, { elite: true }); const base = cr.maxHp(a.c); const out = { hpMul: a.maxHp / base, eliteRatio: b.maxHp / a.maxHp, elite: !!b.elite, trait: b.c.traits.length > 0, dmg: [a.dmgMul, b.dmgMul] }; g.mobs = g.mobs.filter((m) => m.boss); return out; });
+    if (!(r.hpMul >= 2) || !r.elite || !(r.eliteRatio > 2) || !(r.dmg[1] > r.dmg[0] * 1.4) || !r.trait) fail('mob scaling/elite wrong: ' + JSON.stringify(r));
+  }
 
   // --- visit the base: forge, lab, storage, training ---
   await G(async () => { const cr = await import('/js/creature.js'), g = window.__G.G; for (const id of ['frostnub', 'zapkin', 'duneskit']) g.storage.push(cr.makeCreature(id, 4)); });
@@ -146,12 +183,23 @@ for (const { name, opts } of runs) {
   if (name === 'phone' || name === 'tablet') {
     await G(async () => {
       const cr = await import('/js/creature.js'), g = window.__G.G;
-      g.team.push(cr.makeCreature('pondle', 8), cr.makeCreature('zapkin', 8)); g.vials.Swift = 1;
+      g.team.push(cr.makeCreature('pondle', 12), cr.makeCreature('reefling', 12)); g.vials.Swift = 1; g.essence = 60; g.fuseSlots = [0, 0];
       const w = await import('/js/world.js'), st = w.CAMP.stations.find((s) => s.id === 'lab'); g.player.x = st.x + 0.5; g.player.y = st.y + 2;
     });
     await wait(400);
     await G(() => { const g = window.__G.G; g.baseMode = true; g.screen = 'fuse'; g.ui = { fuse: { a: g.team[g.team.length - 1], b: g.team[g.team.length - 2], vial: 'Swift' }, page: 0 }; });
     await wait(400); await snap('fuse-ready-' + name);
+    // requirement gates: too-low level, no essence, no free slot, incompatible types all block fusion
+    const gate = await G(async () => {
+      const g = window.__G.G, fu = await import('/js/fusion.js'), cr = await import('/js/creature.js'), a = g.team[g.team.length - 1], b = g.team[g.team.length - 2];
+      const res = { ok: fu.fuseReq(a, b).ready };
+      const lv = a.lv; a.lv = 5; res.lowLv = fu.fuseReq(a, b).ready; a.lv = lv;
+      const e = g.essence; g.essence = 0; res.noEss = fu.fuseReq(a, b).ready; g.essence = e;
+      const s = g.fuseSlots; g.fuseSlots = [Date.now() + 1e6, Date.now() + 1e6]; res.noSlot = fu.fuseReq(a, b).ready; g.fuseSlots = s;
+      res.incompat = fu.fuseReq(a, cr.makeCreature('murkle', 12)).ready;
+      return res;
+    });
+    if (!gate.ok || gate.lowLv || gate.noEss || gate.noSlot || gate.incompat) fail('fusion gates wrong: ' + JSON.stringify(gate));
     // real UI: tap FUSE!, then the confirm button (probe y positions on the right half until the fusion starts)
     const f0 = await G(() => window.__G.G.team.length + window.__G.G.storage.length), u = Math.min(Math.max(Math.min(W, H) / 380, 0.85), 2.4);
     await tap(W * 0.72, H - 10 * u - 22 * u, 300);
@@ -163,6 +211,7 @@ for (const { name, opts } of runs) {
       const f1 = await G(() => window.__G.G.team.length + window.__G.G.storage.length);
       if (f1 !== f0 - 1) fail(`fusion should consume 2 and add 1 (${f0} -> ${f1})`);
       if (await G(() => window.__G.G.vials.Swift !== 0)) fail('gene vial was not consumed');
+      if (await G(() => window.__G.G.essence >= 60 || window.__G.G.fuseSlots.every((s) => s <= Date.now()))) fail('fusion should cost essence and start a slot cooldown');
       await wait(900);
       await page.keyboard.press('Escape'); await wait(300);
     }
@@ -197,14 +246,14 @@ for (const { name, opts } of runs) {
   const { width: W, height: H } = runs[0].opts.viewport;
   for (let y = H * 0.62; (await page.evaluate(() => window.__G.G.screen)) === 'title' && y < H; y += 20) { await page.touchscreen.tap(W / 2, y); await page.waitForTimeout(300); }
   await page.waitForTimeout(600);
-  const r = await page.evaluate(() => { const g = window.__G.G; return { screen: g.screen, name: g.team[0] && g.team[0].name, orbs: g.orbs, gear: g.gear, mats: g.mats, hp: g.hp, boss: !!g.bosses.b_meadow, bossMobs: g.mobs.filter((m) => m.boss).length, seed: g.seed, skill: g.skill.lvl }; });
+  const r = await page.evaluate(() => { const g = window.__G.G; return { screen: g.screen, name: g.team[0] && g.team[0].name, orbs: g.orbs, gear: g.gear, mats: g.mats, hp: g.hp, boss: !!g.bosses.b_meadow, bossMobs: g.mobs.filter((m) => m.boss).length, seed: g.seed, skill: g.skill.lvl, essence: g.essence, petAuto: g.settings.petAuto, slots: g.fuseSlots }; });
   if (r.screen !== 'world' || r.name !== 'Oldie' || r.orbs !== 9 || r.seed !== 4242 || r.skill !== 3 || !r.boss) errors.push('[migrate] v1 save did not load correctly: ' + JSON.stringify(r));
-  if (r.gear.w !== 0 || r.mats.hide !== 0 || !(r.hp > 0)) errors.push('[migrate] v2 defaults missing: ' + JSON.stringify(r));
+  if (r.gear.w !== 0 || r.mats.hide !== 0 || !(r.hp > 0) || r.essence !== 0 || r.petAuto !== true || !Array.isArray(r.slots)) errors.push('[migrate] v2/v3 defaults missing: ' + JSON.stringify(r));
   if (r.bossMobs !== 5) errors.push('[migrate] defeated boss should not respawn (boss mobs: ' + r.bossMobs + ')');
   await page.evaluate(() => window.__G.G.team[0].lv++); await page.waitForTimeout(100);
   await page.evaluate(() => dispatchEvent(new Event('pagehide')));
-  const keep = await page.evaluate(() => ({ v1: JSON.parse(localStorage.getItem('glimmerwild.save.v1')).team[0].lv, v2: JSON.parse(localStorage.getItem('glimmerwild.save.v2')).team[0].lv }));
-  if (keep.v1 !== 7 || keep.v2 !== 8) errors.push('[migrate] save keys wrong: ' + JSON.stringify(keep));
+  const keep = await page.evaluate(() => ({ v1: JSON.parse(localStorage.getItem('glimmerwild.save.v1')).team[0].lv, v3: JSON.parse(localStorage.getItem('glimmerwild.save.v3')).team[0].lv, ver: JSON.parse(localStorage.getItem('glimmerwild.save.v3')).v, v2key: localStorage.getItem('glimmerwild.save.v2') }));
+  if (keep.v1 !== 7 || keep.v3 !== 8 || keep.ver !== 3 || keep.v2key !== null) errors.push('[migrate] save keys wrong: ' + JSON.stringify(keep));
   await ctx.close();
 }
 await browser.close();

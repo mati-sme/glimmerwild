@@ -69,7 +69,7 @@ function hpBar(ctx, S, x, y, w, h, f, boss) {
 
 function drawMob(ctx, S, m) {
   const { sx, sy, ts, u } = S, x = sx(m.x), y = sy(m.y), t = G.time;
-  const sz = ts * (m.boss ? 2.5 : m.minion ? 0.85 : 1.1);
+  const sz = ts * (m.boss ? 2.5 : m.minion ? 0.85 : m.elite ? 1.4 : 1.1);
   if (!onScreen(S, x, y, sz * 1.5)) return;
   if (m.holding) {
     const h = m.holding, k = Math.min(1, h.t / 0.35), wi = (h.t - 0.35) / 0.6;
@@ -88,6 +88,10 @@ function drawMob(ctx, S, m) {
   if (m.pat && m.pat.k === 'charge' && m.pat.t < 1) { sc = 0.8; ox = Math.sin(t * 60) * 2 * u; }
   if (m.pat && m.pat.k === 'stun') ox = Math.sin(t * 8) * 2 * u;
   const spawnK = m.minion ? Math.min(1, m.born * 3) : 1;
+  if (m.elite) { // golden pulsing aura on the ground
+    ctx.fillStyle = `rgba(255,208,48,${0.28 + 0.14 * Math.sin(t * 5)})`; ctx.beginPath(); ctx.ellipse(x, y - sz * 0.02, sz * 0.52, sz * 0.2, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#f0c830'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(x, y - sz * 0.02, sz * 0.52, sz * 0.2, 0, 0, 7); ctx.stroke();
+  }
   drawCreature(ctx, m.c.g, x + ox, y - sz * 0.38 - bob, sz * spawnK, { flip: m.dir < 0, flash: m.flash > 0, scaleY: sc });
   if (m.boss) { // crown + glow so bosses read at a glance
     ctx.strokeStyle = `rgba(255,80,60,${0.35 + 0.2 * Math.sin(t * 4)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, sz * 0.5, sz * 0.18, 0, 0, 7); ctx.stroke();
@@ -98,9 +102,10 @@ function drawMob(ctx, S, m) {
   const f = m.hp / m.maxHp;
   if (m.boss) {
     hpBar(ctx, S, x, y - sz * 0.98 - ts * 0.1, sz * 0.9, 7 * u, f, true);
-  } else if (f < 1 || m.aggro > 0) {
+  } else if (f < 1 || m.aggro > 0 || m.elite) {
     const w = sz * 0.8, by = y - sz * 0.92 - bob;
-    hpBar(ctx, S, x + 3 * u, by, w, 5 * u, f, false);
+    hpBar(ctx, S, x + 3 * u, by, w, (m.elite ? 7 : 5) * u, f, false);
+    if (m.elite) { ctx.strokeStyle = '#f0c830'; ctx.lineWidth = 2; ctx.strokeRect(x + 3 * u - w / 2 - 2, by - 2, w + 4, 7 * u + 4); drawIcon(ctx, 'elite', x + 3 * u, by - 12 * u - Math.sin(t * 5) * 1.5 * u, 20 * u); }
     ctx.fillStyle = TYPE_COLORS[m.c.types[0]]; ctx.beginPath(); ctx.arc(x - w / 2 - 5 * u, by + 2.5 * u, 4 * u, 0, 7); ctx.fill(); ctx.strokeStyle = '#142814'; ctx.lineWidth = 1; ctx.stroke();
     if (f <= 0.35) drawIcon(ctx, 'orb', x + w / 2 + 10 * u, by + 2.5 * u, (11 + Math.sin(t * 8) * 1.5) * u);
   }

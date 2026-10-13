@@ -10,8 +10,9 @@ import { maxHp, stat, xpNeed, learnset, movesOf, gainXp, fuse, rarity, RARITY } 
 import { SPECIES, TRAITS, BOSSES, BIOME_NAMES, TYPE_COLORS } from './data.js';
 import { N, CAMP } from './world.js';
 import { WEAPONS, ARMORS, MATS, MAT_KEYS, canAfford, upgrade, playerMaxHp } from './gear.js';
-import { QUESTS, questText, activeQuests, progressOf, questEvent } from './quests.js';
+import { QUESTS, questText, activeQuests, progressOf, questEvent, questState, rewardBits, questCheck } from './quests.js';
 import { atBase } from './base.js';
+import { fuseReq, payFusion, needLevel, compatible, slotFrac, FUSE_SLOTS } from './fusion.js';
 
 export function go(screen, ui = {}) { G.screen = screen; G.ui = { ...ui, page: 0 }; }
 let confirmBox = null;
@@ -39,7 +40,7 @@ function pagedList(list, area, onPick, o = {}) {
   const cw = (area.w - (cols - 1) * gap) / cols;
   list.slice(G.ui.page * per, (G.ui.page + 1) * per).forEach((c, i) => {
     const x = area.x + (i % cols) * (cw + gap), y = area.y + Math.floor(i / cols) * (rh + gap);
-    if (creatureRow(c, x, y, cw, rh, { sel: o.sel && o.sel(c), disabled: o.disabled && o.disabled(c) })) onPick(c);
+    if (creatureRow(c, x, y, cw, rh, { sel: o.sel && o.sel(c), disabled: o.disabled && o.disabled(c), need: o.need && o.need(c), bad: o.bad && o.bad(c) })) onPick(c);
   });
   if (!list.length) text(o.empty || 'Nothing here yet.', area.x + area.w / 2, area.y + 40 * u, { size: 14, align: 'center', color: PAL.mid });
   if (pages > 1) {
@@ -69,6 +70,7 @@ function mainMenu() {
     drawIcon(C(), 'orb', ix + 8 * u, iy + 18 * u, 16 * u); text(`${G.orbs}`, ix + 22 * u, iy + 18 * u, { size: 13 });
     drawIcon(C(), 'heart', ix + 64 * u, iy + 18 * u, 16 * u); text(`${Math.ceil(G.hp)}/${playerMaxHp()}`, ix + 78 * u, iy + 18 * u, { size: 13 });
     MAT_KEYS.forEach((k, i) => { drawIcon(C(), k, ix + 8 * u + i * 52 * u, iy + 40 * u, 15 * u); text(String(G.mats[k] || 0), ix + 20 * u + i * 52 * u, iy + 40 * u, { size: 12 }); });
+    drawIcon(C(), 'essence', ix + 8 * u + MAT_KEYS.length * 52 * u, iy + 40 * u, 15 * u); text(String(G.essence || 0), ix + 20 * u + MAT_KEYS.length * 52 * u, iy + 40 * u, { size: 12 });
     text(`Catching skill Lv ${G.skill.lvl}${G.skill.lvl >= SKILL_MAX ? ' (MAX)' : ''}`, ix, iy + 60 * u, { size: 11 });
     bar(ix, iy + 68 * u, 150 * u, 8 * u, G.skill.xp / need, '#4890e0');
     const seen = Object.keys(G.dex.seen).length, caught = Object.keys(G.dex.caught).length, bd = Object.keys(G.bosses).length;
@@ -213,14 +215,14 @@ function fuseScreen() {
   const key = f.a && f.b ? f.a.id + f.b.id + (f.vial || '') : '';
   if (key && f.key !== key) { f.key = key; f.pre = fuse(f.a, f.b, f.vial); }
   if (!key) f.pre = null;
-  const can = !!f.pre;
+  const req = fuseReq(f.a, f.b), can = !!f.pre && req.ready;
   const r = frame('FUSION LAB', up, [{ label: 'FUSE!', disabled: !can, fill: '#f0c830', fn: () => ask(`Fuse ${f.a.name} + ${f.b.name}? Both parents will be consumed.`, () => doFuse(f), 'FUSE') }]);
-  const vials = vialList(), vh = vials.length ? 34 * u : 0;
+  const vials = vialList(), vh = vials.length ? 34 * u : 0, rqh = 40 * u;
   const gap = 6 * u, cw = (r.w - 2 * gap) / 3;
-  const ss = Math.min(cw * 0.95, Math.max(40 * u, r.h - 190 * u - vh), 110 * u);
+  const ss = Math.min(cw * 0.95, Math.max(40 * u, r.h - 190 * u - vh - rqh), 110 * u);
   const cols = [['PARENT A', f.a, 0], ['RESULT', f.pre, 1], ['PARENT B', f.b, 2]];
   cols.forEach(([label, c, i]) => {
-    const x = r.x + i * (cw + gap), h = Math.min(r.h - vh, ss + 156 * u), mid = i === 1;
+    const x = r.x + i * (cw + gap), h = Math.min(r.h - vh - rqh, ss + 156 * u), mid = i === 1;
     panel(x, r.y, cw, h, { fill: mid ? '#f4f0a8' : PAL.pale });
     text(label, x + cw / 2, r.y + 14 * u, { size: 11, align: 'center', color: PAL.mid });
     if (!mid && !c) { drawIcon(C(), 'plus', x + cw / 2, r.y + 30 * u + ss / 2, Math.min(ss * 0.5, 40 * u), PAL.mid); text('tap', x + cw / 2, r.y + 30 * u + ss / 2 + Math.min(ss * 0.4, 30 * u), { size: 11, align: 'center', color: PAL.mid }); }
@@ -230,7 +232,9 @@ function fuseScreen() {
       const ty = r.y + 30 * u + ss, rar = rarity(c);
       text(c.name, x + cw / 2, ty, { size: 13, align: 'center', maxW: cw - 8 * u, color: RARITY[rar].c === '#9aa88a' ? PAL.ink : RARITY[rar].c });
       for (let k = 0; k <= rar; k++) drawIcon(C(), 'star', x + cw / 2 + (k - rar / 2) * 11 * u, ty + 13 * u, 10 * u, RARITY[rar].c);
-      text(`Lv ${c.lv}${c.gen ? ' G' + c.gen : ''}`, x + cw / 2, ty + 26 * u, { size: 11, align: 'center', color: PAL.mid });
+      const low = !mid && c.lv < needLevel(c);
+      text(`Lv ${c.lv}${low ? '/' + needLevel(c) : ''}${c.gen ? ' G' + c.gen : ''}`, x + cw / 2, ty + 26 * u, { size: 11, align: 'center', color: low ? PAL.red : PAL.mid });
+      if (low) drawIcon(C(), 'lock', x + cw - 14 * u, r.y + 14 * u, 18 * u);
       chips(c.types, x + cw / 2 - (c.types.length > 1 ? 36 : 17) * u, ty + 34 * u, 12);
       const pars = mid ? [f.a, f.b] : [];
       [['HP', maxHp(c), 'hp'], ['ATK', stat(c, 'atk'), 'atk'], ['DEF', stat(c, 'def'), 'def'], ['SPD', stat(c, 'spd'), 'spd']].forEach(([l, v, k], j) => {
@@ -243,7 +247,7 @@ function fuseScreen() {
     }
     if (!mid && hit(x, r.y, cw, h)) go('pick', { fuse: f, slot: i === 0 ? 'a' : 'b', page: 0 });
   });
-  const py = r.y + Math.min(r.h - vh, ss + 156 * u) + 4 * u;
+  const py = r.y + Math.min(r.h - vh - rqh, ss + 156 * u) + 4 * u;
   if (vials.length) {
     drawIcon(C(), 'flask', r.x + 14 * u, py + 15 * u, 20 * u);
     let vx = r.x + 32 * u;
@@ -253,10 +257,39 @@ function fuseScreen() {
       vx += bw + 4 * u;
     }
   }
-  const hint = G.team.length + G.storage.length < 2 ? 'You need at least 2 creatures. Go catch more!' : vials.length ? 'Pick a gene vial to guarantee its trait.' : 'Catch creatures with traits to collect gene vials.';
-  text(hint, W / 2, py + vh + 12 * u, { size: 11, align: 'center', color: PAL.mid, maxW: r.w });
+  fuseReqRow(f, req, r.x, py + vh, r.w, rqh - 6 * u);
+}
+// Requirements as icons: lock+Lv (level gate), type check, essence cost, and the fusion slots as timer rings.
+function fuseReqRow(f, req, x, y, w, h) {
+  const { u } = G, ctx = C(), both = !!(f.a && f.b), cy = y + h / 2;
+  panel(x, y, w, h, { fill: PAL.pale });
+  const cell = w / 4, ok = '#2a8a2a', bad = PAL.red;
+  // level gate
+  let cx = x + cell * 0.5;
+  const lvOk = req.lvA && req.lvB;
+  drawIcon(ctx, lvOk ? 'check' : 'lock', cx - 16 * u, cy, 20 * u);
+  text(`Lv ${f.a || f.b ? Math.max(req.needA, req.needB) : 10}+`, cx + 8 * u, cy, { size: 12, color: lvOk ? ok : bad });
+  // type compatibility
+  cx = x + cell * 1.5;
+  drawIcon(ctx, 'paw', cx - 18 * u, cy, 18 * u); drawIcon(ctx, 'paw', cx - 6 * u, cy, 18 * u);
+  drawIcon(ctx, !both || req.typeOk ? 'check' : 'cross', cx + 14 * u, cy, 18 * u);
+  // essence cost
+  cx = x + cell * 2.5;
+  drawIcon(ctx, 'essence', cx - 20 * u, cy, 20 * u);
+  text(both ? `${req.have}/${req.cost}` : `${req.have}`, cx + 2 * u, cy, { size: 12, color: both && !req.ess ? bad : ok });
+  // slots: ring drains while a slot cools down
+  cx = x + cell * 3.5;
+  for (let i = 0; i < FUSE_SLOTS; i++) {
+    const rx = cx - 16 * u + i * 32 * u, fr = slotFrac(i), rr = h * 0.36;
+    ctx.lineWidth = 4 * u; ctx.strokeStyle = '#b8c0a0'; ctx.beginPath(); ctx.arc(rx, cy, rr, 0, 7); ctx.stroke();
+    if (fr > 0) { ctx.strokeStyle = '#e8883c'; ctx.beginPath(); ctx.arc(rx, cy, rr, -Math.PI / 2, -Math.PI / 2 + fr * Math.PI * 2); ctx.stroke(); }
+    else { ctx.strokeStyle = '#58c848'; ctx.beginPath(); ctx.arc(rx, cy, rr, 0, 7); ctx.stroke(); }
+    drawIcon(ctx, 'timer', rx, cy, rr * 1.2, fr > 0 ? undefined : '#e4f4d0');
+  }
+  if (req.slot < 0) { const s = Math.ceil(req.wait / 1000); text(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, cx + 4 * u, y + h - 3 * u, { size: 9, align: 'center', color: bad }); }
 }
 function doFuse(f) {
+  if (!payFusion(f.a, f.b)) { sfx.deny(); return; }
   const child = fuse(f.a, f.b, f.vial);
   if (f.vial) G.vials[f.vial]--;
   const pr = Math.max(rarity(f.a), rarity(f.b));
@@ -314,7 +347,12 @@ function pickScreen() {
   const f = G.ui.fuse, slot = G.ui.slot, other = slot === 'a' ? f.b : f.a;
   const r = frame('CHOOSE PARENT', () => go('fuse', { fuse: f }));
   const list = [...G.team, ...G.storage].filter((c) => c !== other);
-  pagedList(list, r, (c) => { f[slot] = c; go('fuse', { fuse: f }); }, { sel: (c) => c === f[slot] });
+  pagedList(list, r, (c) => { f[slot] = c; go('fuse', { fuse: f }); }, {
+    sel: (c) => c === f[slot],
+    need: (c) => (c.lv < needLevel(c) ? needLevel(c) : 0),
+    bad: (c) => !!other && !compatible(c, other),
+    disabled: (c) => c.lv < needLevel(c) || (!!other && !compatible(c, other)),
+  });
 }
 
 // ---------- forge (gear) ----------
@@ -359,24 +397,43 @@ function forgeScreen() {
 }
 
 // ---------- quests ----------
+// Quest board: the 3 active quests with progress bars + reward icons, and a tile map of every quest (check = done, lock = later).
+function rewardRow(q, x, y, size) {
+  let cx = x;
+  for (const [ic, n] of rewardBits(q).slice(0, 4)) { drawIcon(C(), ic, cx + size * 0.5, y, size); text('x' + n, cx + size + 1 * G.u, y, { size: 10 }); cx += size + 24 * G.u; }
+}
 function questsScreen() {
-  const { u } = G, r = frame('QUESTS', up);
-  const list = activeQuests(), rh = Math.min(76 * u, (r.h - 20 * u) / 3), w = Math.min(r.w, 480 * u), x = r.x + (r.w - w) / 2;
+  const { u, W, H } = G, r = frame('QUESTS', up);
+  G.questNew = false; questCheck();
+  const list = activeQuests(), land = W > H * 1.1, gap = 6 * u;
+  const lw = land ? r.w * 0.58 : Math.min(r.w, 480 * u), lx = land ? r.x : r.x + (r.w - lw) / 2;
+  const gridH = land ? r.h : Math.min(r.h * 0.4, 5 * 40 * u + 8 * u);
+  const rh = Math.max(46 * u, Math.min(78 * u, ((land ? r.h : r.h - gridH - gap) - 2 * gap) / 3));
   list.forEach((q, i) => {
-    const y = r.y + i * (rh + 6 * u), prog = progressOf(q);
-    panel(x, y, w, rh, { fill: i ? PAL.pale : '#f4f0a8' });
-    drawIcon(C(), q.icon, x + 30 * u, y + rh / 2, 34 * u);
-    text(questText(q), x + 58 * u, y + rh * 0.3, { size: 13, maxW: w - 70 * u });
-    bar(x + 58 * u, y + rh * 0.5, w - 190 * u, 12 * u, prog / q.n, '#58b0ff');
-    text(`${prog}/${q.n}`, x + 58 * u + (w - 190 * u) / 2, y + rh * 0.5 + 6.5 * u, { size: 10, align: 'center', color: PAL.ink, shadow: '#fff' });
-    drawIcon(C(), 'gift', x + w - 100 * u, y + rh * 0.57, 24 * u);
-    let rx = x + w - 82 * u; const rew = q.rew;
-    const bits = []; if (rew.orbs) bits.push(['orb', rew.orbs]); if (rew.berries) bits.push(['heart', rew.berries]); for (const [k, n] of Object.entries(rew.mats || {})) bits.push([k, n]);
-    bits.slice(0, 3).forEach(([ic, n], j) => { drawIcon(C(), ic, rx + 8 * u, y + rh * 0.3 + j * 15 * u, 13 * u); text('x' + n, rx + 18 * u, y + rh * 0.3 + j * 15 * u, { size: 10 }); });
+    const y = r.y + i * (rh + gap), prog = progressOf(q), ready = prog >= q.n;
+    panel(lx, y, lw, rh, { fill: i ? PAL.pale : '#f4f0a8' });
+    drawIcon(C(), q.icon, lx + 28 * u, y + rh * 0.42, Math.min(40 * u, rh * 0.7));
+    text(`${prog}/${q.n}`, lx + 56 * u, y + rh * 0.24, { size: 14 });
+    bar(lx + 56 * u, y + rh * 0.4, lw - 70 * u, 11 * u, prog / q.n, ready ? '#58c848' : '#58b0ff');
+    drawIcon(C(), 'gift', lx + 64 * u, y + rh * 0.78, 18 * u);
+    rewardRow(q, lx + 82 * u, y + rh * 0.78, 15 * u);
+    text(questText(q), lx + lw - 8 * u, y + rh * 0.24, { size: 9, align: 'right', color: PAL.mid, maxW: lw - 130 * u });
   });
-  if (!list.length) { drawIcon(C(), 'crown', G.W / 2, r.y + 60 * u, 60 * u); text('All quests complete!', G.W / 2, r.y + 120 * u, { size: 16, align: 'center' }); }
+  if (!list.length) { drawIcon(C(), 'crown', lx + lw / 2, r.y + 60 * u, 60 * u); text('All quests complete!', lx + lw / 2, r.y + 120 * u, { size: 16, align: 'center' }); }
+  // tile map of all quests
+  const cols = 6, gw = land ? r.w - lw - gap : Math.min(r.w, 480 * u), gx = land ? lx + lw + gap : lx;
+  const gy = land ? r.y : r.y + 3 * (rh + gap) + 2 * u, avail = (land ? r.h : r.y + r.h - gy) - 14 * u;
+  const rows = Math.ceil(QUESTS.length / cols), tile = Math.min(gw / cols, avail / rows, 46 * u);
+  const gx0 = gx + (gw - tile * cols) / 2;
+  QUESTS.forEach((q, i) => {
+    const x = gx0 + (i % cols) * tile, y = gy + Math.floor(i / cols) * tile, st = questState(q), t = tile - 3 * u;
+    fillR(x, y, t, t, PAL.dark); fillR(x + 2 * u, y + 2 * u, t - 4 * u, t - 4 * u, st === 'done' ? '#a8d890' : st === 'active' ? '#f4f0a8' : '#c8d0b8');
+    drawIcon(C(), q.icon, x + t / 2, y + t / 2, t * 0.56, st === 'locked' ? '#8a9478' : undefined);
+    if (st === 'done') drawIcon(C(), 'check', x + t * 0.74, y + t * 0.74, t * 0.4);
+    else if (st === 'locked') drawIcon(C(), 'lock', x + t * 0.74, y + t * 0.74, t * 0.36);
+  });
   const done = Object.keys(G.quests.done).length;
-  text(`Done ${done}/${QUESTS.length}`, G.W / 2, r.y + r.h - 8 * u, { size: 12, align: 'center', color: PAL.mid });
+  text(`${done}/${QUESTS.length}`, gx + gw / 2, gy + rows * tile + 6 * u, { size: 12, align: 'center', color: PAL.mid });
 }
 
 function trainPickScreen() {

@@ -43,8 +43,13 @@ const ICONS = {
   dumbbell(c) { P(c, (c) => { c.moveTo(-0.5, 0); c.lineTo(0.5, 0); }); c.lineWidth *= 2; c.stroke(); c.lineWidth /= 2; for (const x of [-0.7, 0.7]) { P(c, (c) => c.rect(x - 0.18, -0.55, 0.36, 1.1)); c.fill(); c.stroke(); } },
   plus(c) { P(c, (c) => { c.moveTo(-0.7, 0); c.lineTo(0.7, 0); c.moveTo(0, -0.7); c.lineTo(0, 0.7); }); c.lineWidth *= 2.6; c.stroke(); },
   gift(c) { P(c, (c) => c.rect(-0.8, -0.2, 1.6, 1.05)); c.fill(); c.stroke(); P(c, (c) => c.rect(-0.9, -0.55, 1.8, 0.4)); c.fill(); c.stroke(); P(c, (c) => { c.moveTo(0, -0.55); c.lineTo(0, 0.85); }); c.stroke(); },
+  lock(c) { P(c, (c) => { c.arc(0, -0.2, 0.5, Math.PI, 0); }); c.lineWidth *= 2.2; c.stroke(); c.lineWidth /= 2.2; P(c, (c) => c.rect(-0.7, -0.15, 1.4, 1.05)); c.fill(); c.stroke(); P(c, (c) => c.arc(0, 0.28, 0.16, 0, 7)); c.fillStyle = '#142814'; c.fill(); },
+  essence(c) { P(c, (c) => { c.moveTo(0, -0.9); c.quadraticCurveTo(0.85, 0.1, 0, 0.9); c.quadraticCurveTo(-0.85, 0.1, 0, -0.9); }); c.fill(); c.stroke(); P(c, (c) => { c.moveTo(-0.22, 0.05); c.quadraticCurveTo(-0.2, 0.4, 0.1, 0.55); }); c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth *= 1.4; c.stroke(); },
+  timer(c) { P(c, (c) => c.arc(0, 0.1, 0.78, 0, 7)); c.fill(); c.stroke(); P(c, (c) => c.rect(-0.2, -0.95, 0.4, 0.2)); c.fillStyle = '#9a9aa8'; c.fill(); c.stroke(); P(c, (c) => { c.moveTo(0, 0.1); c.lineTo(0, -0.45); c.moveTo(0, 0.1); c.lineTo(0.35, 0.3); }); c.lineWidth *= 1.8; c.stroke(); },
+  elite(c) { ICONS.skull(c); P(c, (c) => { c.moveTo(-0.7, -0.75); c.lineTo(-0.45, -1.0); c.lineTo(-0.25, -0.8); c.lineTo(0, -1.05); c.lineTo(0.25, -0.8); c.lineTo(0.45, -1.0); c.lineTo(0.7, -0.75); c.closePath(); }); c.fillStyle = '#f0c830'; c.fill(); c.stroke(); },
 };
 export const ICON_COLORS = {
+  lock: '#c8c8d4', essence: '#58e0c8', timer: '#f4f4f4', elite: '#f4f4f4',
   heart: '#e8483c', sword: '#d8d8e4', orb: '#8a50f0', hand: '#f8d8a0', shield: '#58a0e8', home: '#e8b868', flask: '#b878f0', scroll: '#f4e4b0', star: '#f0c830', paw: '#f0a8c0',
   map: '#8cc878', sound: '#f4f4f4', mute: '#f4f4f4', save: '#58a0e8', anvil: '#9a9aa8', crown: '#f0c830', hide: '#b8803c', fang: '#f4f0d8', gem: '#58c8f0', core: '#f0508c', chest: '#b8803c',
   skull: '#f4f4f4', menu: '#f4f4f4', check: '#58d858', cross: '#e8483c', back: '#f4f4f4', arrow: '#f0c830', tent: '#e8885c', dumbbell: '#c8c8d4', plus: '#f4f4f4', gift: '#e8587c',

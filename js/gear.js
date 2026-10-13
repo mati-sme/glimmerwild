@@ -41,14 +41,21 @@ export function upgrade(kind) {
   return true;
 }
 
-// Materials a defeated mob drops: [{k, n}]
-export function rollDrops(lv, boss, rng = Math.random) {
-  const d = [{ k: 'hide', n: 1 + (rng() < 0.5 ? 1 : 0) }];
-  if (rng() < 0.35 + Math.min(0.3, lv * 0.01)) d.push({ k: 'fang', n: 1 });
-  if (rng() < 0.08 + Math.min(0.25, lv * 0.006)) d.push({ k: 'gem', n: 1 });
+// Materials a defeated mob drops: [{k, n}]. `essence` is a separate counter (G.essence) used for fusion; it shows up here as k:'essence'.
+// opts: { boss, elite }
+export function rollDrops(lv, o = false, rng = Math.random) {
+  const boss = o === true || !!(o && o.boss), elite = !!(o && o.elite);
+  const d = [{ k: 'hide', n: 1 + (rng() < 0.5 ? 1 : 0) + (elite ? 2 : 0) }];
+  if (rng() < 0.35 + Math.min(0.3, lv * 0.01) || elite) d.push({ k: 'fang', n: elite ? 2 : 1 });
+  if (rng() < 0.08 + Math.min(0.25, lv * 0.006) + (elite ? 0.4 : 0)) d.push({ k: 'gem', n: elite ? 2 : 1 });
+  if (elite && rng() < 0.12) d.push({ k: 'core', n: 1 });
   if (boss) d.push({ k: 'gem', n: 6 }, { k: 'core', n: 2 }, { k: 'fang', n: 6 });
+  const ess = boss ? 12 : elite ? 3 + (rng() < 0.5 ? 1 : 0) : rng() < 0.22 ? 1 : 0;
+  if (ess) d.push({ k: 'essence', n: ess });
   return d;
 }
-export function addMats(drops) { for (const { k, n } of drops) G.mats[k] = (G.mats[k] || 0) + n; }
-export const matText = (drops) => drops.map((d) => `${MATS[d.k].name} x${d.n}`).join(' ');
+export function addMats(drops) {
+  for (const { k, n } of drops) { if (k === 'essence') { G.essence = (G.essence || 0) + n; stat1('essence', n); } else G.mats[k] = (G.mats[k] || 0) + n; }
+}
+export const matText = (drops) => drops.map((d) => `${d.k === 'essence' ? 'Essence' : MATS[d.k].name} x${d.n}`).join(' ');
 export { toast };

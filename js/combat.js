@@ -8,6 +8,8 @@ import { questEvent } from './quests.js';
 import { SPECIES_BY_ID, TYPE_COLORS, BIOME_KEYS, SPECIES } from './data.js';
 import { makeCreature } from './creature.js';
 import { clamp, pick } from './util.js';
+import { TRAIT_LIST } from './data.js';
+import { N } from './world.js';
 
 export const K = {
   fx: [], parts: [], proj: [], shots: [], throws: [], grounds: [], pet: null, petId: null, focus: null, focusT: 0,
@@ -17,6 +19,9 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 export const activePet = () => G.team.find((c) => c.hp > 0) || null;
 export const playerAlive = () => K.ko <= 0;
 export const isCatchable = (m) => !m.boss || m.hp <= m.maxHp * 0.25;
+// a wild creature the player is aiming at, has an orb flying toward, or is already capturing: the pet must leave it alone
+export const isCatchTarget = (m) => !!m && (!!m.holding || (G.aimView && G.aimView.lock === m) || K.throws.some((t) => t.lock === m));
+export const petAutoOn = () => G.settings.petAuto !== false;
 export const radiusOf = (m) => (m.boss ? 0.85 : m.minion ? 0.38 : 0.45);
 
 // ---------- effects ----------
@@ -36,10 +41,26 @@ export function initCombat() {
   for (const b of G.world.bosses) if (!G.bosses[b.id]) G.mobs.push(spawnBoss(b));
 }
 function spawnBoss(b) {
-  return newMob(b.c, b.x, b.y, b.biome, Math.random, { boss: b, hpMul: 5, patCd: 2, pat: null, pi: 0 });
+  return newMob(b.c, b.x, b.y, b.biome, Math.random, { boss: b, hpMul: 7, dmgMul: 1.3, patCd: 2, pat: null, pi: 0 });
+}
+// ---------- difficulty: zone (distance from the base) x player progression ----------
+export const zoneAt = (x, y) => Math.min(6, Math.floor(Math.hypot(x - N / 2, y - N / 2) / 18));
+export const progress = () => Object.keys(G.bosses).length * 0.1 + (G.gear.w + G.gear.a) * 0.03 + (G.skill.lvl - 1) * 0.01;
+export const eliteChance = (zone) => Math.min(0.22, 0.05 + zone * 0.03);
+// Toughens a freshly spawned wild mob in place. Elites get more HP/damage, a guaranteed trait and better drops.
+export function scaleMob(m, o = {}) {
+  const zone = zoneAt(m.x, m.y), pr = progress();
+  const elite = o.elite !== undefined ? o.elite : Math.random() < eliteChance(zone);
+  if (elite) { m.elite = true; if (!m.c.traits.length) m.c.traits = [pick(Math.random, TRAIT_LIST)]; }
+  const hpMul = 2.2 * (1 + 0.22 * zone) * (1 + pr) * (elite ? 2.6 : 1);
+  m.maxHp = m.hp = Math.max(1, Math.round(maxHp(m.c) * hpMul));
+  m.dmgMul = 1.25 * (1 + 0.12 * zone) * (1 + pr * 0.6) * (elite ? 1.5 : 1);
+  m.zone = zone;
+  return m;
 }
 export function spawnMobAt(x, y, spId, lv, o = {}) {
   const m = newMob(makeCreature(spId, lv), x, y, 'meadow', Math.random, o);
+  if (!o.boss && !o.minion && !o.raw) scaleMob(m, { elite: o.elite || false });
   G.mobs.push(m); return m;
 }
 
@@ -131,14 +152,15 @@ export function killMob(m) {
   burst(m.x, m.y - 0.4, boss ? '#ffd830' : '#ffffff', boss ? 36 : 14, boss ? 6 : 4, 0.8);
   if (boss) { sfx.boom(); shake(12); } else sfx.fail();
   if (m.minion) { addMats([{ k: 'hide', n: 1 }]); floater(m.x, m.y - 0.8, { icon: 'hide', txt: '+1', life: 1.2 }); return; }
-  const drops = rollDrops(lv, boss);
+  const elite = !!m.elite, drops = rollDrops(lv, { boss, elite });
   addMats(drops);
   drops.forEach((d, j) => floater(m.x + (j - drops.length / 2) * 0.45, m.y - 0.8 - j * 0.12, { icon: d.k, txt: '+' + d.n, life: 1.4 }));
   const hide = drops.filter((d) => d.k === 'hide').reduce((a, d) => a + d.n, 0);
-  if (Math.random() < (boss ? 1 : 0.25)) K.grounds.push({ x: m.x + rnd(-0.5, 0.5), y: m.y + rnd(-0.3, 0.5), age: 0, pop: 0.4 });
+  if (Math.random() < (boss || elite ? 1 : 0.25)) K.grounds.push({ x: m.x + rnd(-0.5, 0.5), y: m.y + rnd(-0.3, 0.5), age: 0, pop: 0.4 });
   if (boss) { G.bosses[m.boss.id] = true; G.orbs += 5; G.berries += 2; toast(`${m.c.name} defeated!`, 3); }
-  awardXp(Math.floor((20 + lv * 8) * (boss ? 3 : 1)), m.x, m.y);
-  stat1('kills'); questEvent('kill'); questEvent('hide', hide); if (boss) questEvent('boss');
+  if (elite) { G.orbs += 1; stat1('elites'); toast('Elite defeated!', 2); }
+  awardXp(Math.floor((20 + lv * 8) * (boss ? 3 : elite ? 2.4 : 1) * (1 + (m.zone || 0) * 0.12)), m.x, m.y);
+  stat1('kills'); questEvent('kill'); questEvent('hide', hide); if (boss) questEvent('boss'); if (elite) questEvent('elite');
 }
 function awardXp(gain, x, y) {
   const lead = activePet(); if (!lead) return;
@@ -153,8 +175,8 @@ function awardXp(gain, x, y) {
   }
 }
 
-const mobSpeed = (m) => Math.min(3.0, 1.15 + stat(m.c, 'spd') / 48) * (m.boss ? 0.8 : 1);
-const mobDmg = (m) => (4 + stat(m.c, 'atk') * 0.3 + m.c.lv * 0.6) * (m.boss ? 1.15 : 1) * rnd(0.9, 1.1);
+const mobSpeed = (m) => Math.min(3.0, 1.15 + stat(m.c, 'spd') / 48) * (m.boss ? 0.8 : 1) * (m.elite ? 1.12 : 1);
+const mobDmg = (m) => (4 + stat(m.c, 'atk') * 0.3 + m.c.lv * 0.6) * (m.boss ? 1.15 : 1) * (m.dmgMul || 1) * rnd(0.9, 1.1);
 function mobMove(m, dx, dy, dt, r = 0.22) { if (!moveEntity(G.world, m, dx * dt, dy * dt, m.boss ? 0.5 : r)) return false; return true; }
 
 function chooseTarget(m) {
@@ -173,7 +195,7 @@ export function hurtPet(m, mult = 1) {
   const pc = activePet(), pet = K.pet; if (!pc || !pet) return;
   const ms = movesOf(m.c); let mv = ms[0], bv = -1;
   for (const x of ms) { const v = x.power * effect(x.type, pc.types); if (v > bv) { bv = v; mv = x; } }
-  const r = calcDamage(m.c, pc, mv), dmg = Math.max(1, Math.round(r.dmg * 0.55 * mult * (m.boss ? 1.3 : 1)));
+  const r = calcDamage(m.c, pc, mv), dmg = Math.max(1, Math.round(r.dmg * 0.55 * mult * (m.boss ? 1.3 : 1) * Math.min(2.2, 1 + ((m.dmgMul || 1) - 1) * 0.5)));
   pc.hp = Math.max(0, pc.hp - dmg); pet.flash = 0.15;
   floater(pet.x, pet.y - 0.7, { txt: String(dmg), col: '#ff9070' });
   sfx.thud();
@@ -320,10 +342,10 @@ function updatePet(dt) {
   const pet = K.pet; pet.flash -= dt; pet.cd -= dt; pet.hop -= dt;
   if (K.focusT > 0) K.focusT -= dt; else K.focus = null;
   if (K.focus && (K.focus.hp <= 0 || !G.mobs.includes(K.focus) || K.focus.holding)) K.focus = null;
-  let tgt = K.focus;
-  if (!tgt) { // defend against anything chasing nearby
+  let tgt = petAutoOn() && !isCatchTarget(K.focus) ? K.focus : null;
+  if (!tgt && petAutoOn()) { // defend against anything chasing nearby
     let bd = 3.2;
-    for (const m of G.mobs) { if (m.holding || m.st === 'idle' || m.boss) continue; const d = Math.hypot(m.x - pet.x, m.y - pet.y); if (d < bd) { bd = d; tgt = m; } }
+    for (const m of G.mobs) { if (m.holding || m.st === 'idle' || m.boss || isCatchTarget(m)) continue; const d = Math.hypot(m.x - pet.x, m.y - pet.y); if (d < bd) { bd = d; tgt = m; } }
   }
   let gx, gy, sp = 4.6;
   const dpl = Math.hypot(p.x - pet.x, p.y - pet.y);
@@ -354,7 +376,7 @@ function petAttack(pc, pet, tgt) {
 export function catchChance(m) {
   const e = m.c, sp = SPECIES_BY_ID[e.sp];
   const hpF = 1.15 - 0.85 * (m.hp / m.maxHp), sk = 1 + (G.skill.lvl - 1) * 0.07, lvF = clamp(1.1 - e.lv * 0.012, 0.45, 1.1);
-  return clamp(sp.cr * hpF * sk * lvF + (m.boss ? 0.15 : 0), 0.03, 0.97);
+  return clamp(sp.cr * hpF * sk * lvF * (m.elite ? 0.8 : 1) + (m.boss ? 0.15 : 0), 0.03, 0.97);
 }
 export function maxThrowRange() { return 7.5; }
 // walk the line from the player toward (tx,ty) and stop before the first solid tile
@@ -462,7 +484,7 @@ function updateProj(dt) {
     const s = K.shots[i]; s.t += dt / s.dur;
     if (s.t >= 1) {
       K.shots.splice(i, 1);
-      if (G.mobs.includes(s.m) && !s.m.holding) {
+      if (G.mobs.includes(s.m) && !s.m.holding && !isCatchTarget(s.m)) {
         const dx = s.m.x - s.x, dy = s.m.y - s.y, d = Math.hypot(dx, dy) || 1;
         hurtMob(s.m, s.dmg, { fromPet: true, eff: s.eff, crit: s.crit, color: s.col, kx: dx / d, ky: dy / d, kb: s.m.boss ? 0 : 3 });
         sfx.hit();
@@ -493,7 +515,7 @@ export function updateCombat(dt, move) {
   K.spawnT -= dt;
   if (K.spawnT <= 0) {
     K.spawnT = 0.6;
-    if (G.mobs.filter((m) => !m.boss && !m.minion).length < 12) { const s = trySpawnWild(w, p.x, p.y); if (s) G.mobs.push(s); }
+    if (G.mobs.filter((m) => !m.boss && !m.minion).length < 12) { const s = trySpawnWild(w, p.x, p.y); if (s) G.mobs.push(scaleMob(s)); }
   }
   for (let i = G.mobs.length - 1; i >= 0; i--) { const m = G.mobs[i]; if (!m.boss && !m.holding && Math.hypot(m.x - p.x, m.y - p.y) > 26) G.mobs.splice(i, 1); }
   updateMobs(dt); updatePet(dt); updateThrows(dt); updateHolding(dt); updateProj(dt);
